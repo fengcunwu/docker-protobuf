@@ -15,6 +15,8 @@ ARG GRPC_RUST_VERSION=v0.8.3
 # renovate: datasource=github-releases depName=grpc-web packageName=grpc/grpc-web
 ARG GRPC_WEB_VERSION=1.5.0
 ARG NODE_IMAGE_VERSION=24.15.0-alpine3.23@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f
+# protoc 3.21.12 is published under the protobuf v21.12 release assets.
+ARG PROTOC_VERSION=3.21.12
 # renovate: datasource=github-releases depName=protoc-gen-bq-schema packageName=googlecloudplatform/protoc-gen-bq-schema
 ARG PROTOC_GEN_BQ_SCHEMA_VERSION=v3.1.0
 # renovate: datasource=github-tags depName=protoc-gen-dart packageName=google/protobuf.dart
@@ -367,6 +369,21 @@ WORKDIR /googleapis
 RUN for p in $(find ./google/api -name '*.proto'); do install -D "${p}" "/out/usr/include${p#.}"; done
 
 
+FROM --platform=$BUILDPLATFORM alpine_host AS protoc
+ARG PROTOC_VERSION
+ARG TARGETARCH
+RUN <<EOF
+    case "${TARGETARCH}" in
+      "amd64") PROTOC_ARCH=x86_64  ;;
+      "arm64") PROTOC_ARCH=aarch_64 ;;
+      *)       echo "ERROR: Machine arch ${TARGETARCH} not supported." && exit 1 ;;
+    esac
+    PROTOC_RELEASE_VERSION=${PROTOC_VERSION#3.}
+    curl -fsSLo /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_RELEASE_VERSION}/protoc-${PROTOC_RELEASE_VERSION}-linux-${PROTOC_ARCH}.zip"
+    unzip -q /tmp/protoc.zip -d /out/usr
+EOF
+
+
 FROM --platform=$BUILDPLATFORM alpine_host AS buf
 RUN mkdir -p /buf
 ARG BUF_VERSION
@@ -528,6 +545,7 @@ RUN apk add --no-cache \
         protoc-gen-js \
         openjdk21-jre \
         python3
+COPY --from=protoc /out/ /
 ARG PROTOC_GEN_TS_VERSION
 RUN npm install -g ts-protoc-gen@${PROTOC_GEN_TS_VERSION}
 ARG PROTOC_GEN_NANOPB_VERSION
