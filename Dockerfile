@@ -371,16 +371,27 @@ RUN for p in $(find ./google/api -name '*.proto'); do install -D "${p}" "/out/us
 
 FROM --platform=$BUILDPLATFORM alpine_host AS protoc
 ARG PROTOC_VERSION
-ARG TARGETARCH
+RUN apk add --no-cache \
+        build-base \
+        cmake \
+        samurai \
+        zlib-dev
 RUN <<EOF
-    case "${TARGETARCH}" in
-      "amd64") PROTOC_ARCH=x86_64  ;;
-      "arm64") PROTOC_ARCH=aarch_64 ;;
-      *)       echo "ERROR: Machine arch ${TARGETARCH} not supported." && exit 1 ;;
-    esac
     PROTOC_RELEASE_VERSION=${PROTOC_VERSION#3.}
-    curl -fsSLo /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_RELEASE_VERSION}/protoc-${PROTOC_RELEASE_VERSION}-linux-${PROTOC_ARCH}.zip"
-    unzip -q /tmp/protoc.zip -d /out/usr
+    mkdir -p /protobuf
+    curl -fsSLo /tmp/protobuf.tar.gz "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_RELEASE_VERSION}/protobuf-cpp-${PROTOC_VERSION}.tar.gz"
+    tar xzf /tmp/protobuf.tar.gz --strip 1 -C /protobuf
+    cmake -S /protobuf -B /protobuf-build -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -Dprotobuf_BUILD_TESTS=OFF \
+      -Dprotobuf_BUILD_LIBPROTOC=ON \
+      -Dprotobuf_BUILD_SHARED_LIBS=OFF \
+      -DCMAKE_INSTALL_PREFIX=/usr
+    cmake --build /protobuf-build --target protoc -j$(nproc)
+    install -D /protobuf-build/protoc /out/usr/bin/protoc
+    for p in $(find /protobuf/src/google/protobuf -name '*.proto'); do
+      install -D "${p}" "/out/usr/include/${p#/protobuf/src/}"
+    done
 EOF
 
 
